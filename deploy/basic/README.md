@@ -33,7 +33,7 @@ The application uses a typical topology for a 3-tier web application as follows
 
 ## Build
 
-1. Clone https://github.com/oracle/oci-quickstart-cloudnative
+1. Clone https://github.com/marcelo-ochoa/oci-cloudnative
 1. From the root of the repo execute the command:
   
  `docker build -t mushop-basic -f deploy/basic/Dockerfile .`

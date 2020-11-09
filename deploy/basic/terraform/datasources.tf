@@ -136,8 +136,7 @@ data "template_file" "cloud_init" {
     setup_template_sh_content      = base64gzip(data.template_file.setup_template.rendered)
     deploy_template_content        = base64gzip(data.template_file.deploy_template.rendered)
     catalogue_sql_template_content = base64gzip(data.template_file.catalogue_sql_template.rendered)
-    httpd_conf_content             = base64gzip(data.local_file.httpd_conf.content)
-    mushop_media_pars_list_content = base64gzip(data.template_file.mushop_media_pars_list.rendered)
+    docker_compose_yml_content     = base64gzip(data.local_file.docker_compose_yml.content)
     catalogue_password             = random_string.catalogue_db_password.result
     catalogue_port                 = local.catalogue_port
     mock_mode                      = var.services_in_mock_mode
@@ -153,6 +152,8 @@ data "template_file" "setup_template" {
 
   vars = {
     oracle_client_version = var.oracle_client_version
+    public_key_openssh = tls_private_key.compute_ssh_key.public_key_openssh
+    private_key_pem  = tls_private_key.compute_ssh_key.private_key_pem
   }
 }
 data "template_file" "deploy_template" {
@@ -163,7 +164,6 @@ data "template_file" "deploy_template" {
     db_name                 = oci_database_autonomous_database.mushop_autonomous_database.db_name
     atp_pw                  = random_string.autonomous_database_admin_password.result
     mushop_media_visibility = var.object_storage_mushop_media_visibility
-    mushop_app_par          = "https://objectstorage.${var.region}.oraclecloud.com${oci_objectstorage_preauthrequest.mushop_lite_preauth.access_uri}"
     wallet_par              = "https://objectstorage.${var.region}.oraclecloud.com${oci_objectstorage_preauthrequest.mushop_wallet_preauth.access_uri}"
   }
 }
@@ -174,14 +174,8 @@ data "template_file" "catalogue_sql_template" {
     catalogue_password = random_string.catalogue_db_password.result
   }
 }
-data "local_file" "httpd_conf" {
-  filename = "${path.module}/scripts/httpd.conf"
-}
-data "template_file" "mushop_media_pars_list" {
-  template = "${file("./scripts/mushop_media_pars_list.txt")}"
-  vars = {
-    content = local.mushop_media_pars
-  }
+data "local_file" "docker_compose_yml" {
+  filename = "${path.module}/scripts/docker-compose.yml"
 }
 locals {
   catalogue_port = 3005

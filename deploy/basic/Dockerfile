@@ -7,62 +7,6 @@
 ARG oracleClientVersion=19.8
 
 ###############################
-#    ----- STOREFRONT -----   #
-#    Build stage (node/npm)   #
-###############################
-FROM node:12-alpine as storefront-builder
-
-RUN apk update && apk add --no-cache \
-    autoconf \
-    automake \
-    bash \
-    g++ \
-    libtool \
-    libc6-compat \
-    libjpeg-turbo-dev \
-    libpng-dev \
-    make \
-    nasm
-
-RUN npm config set loglevel warn \
-  && npm set progress=false
-
-# install dependencies
-COPY src/storefront/package.json /tmp/package.json
-COPY src/storefront/package-lock.json /tmp/package-lock.json
-RUN cd /tmp && npm ci
-RUN mkdir -p /app/storefront && cp -a /tmp/node_modules /app/storefront/
-RUN rm -rf /tmp/node_modules
-
-# copy source and build
-WORKDIR /app/storefront
-COPY src/storefront/src src
-COPY src/storefront/*.js* ./
-COPY src/storefront/VERSION VERSION
-
-ARG STATIC_ASSET_URL
-ENV STATIC_ASSET_URL ${STATIC_ASSET_URL:-""}
-ENV NODE_ENV "production"
-RUN npm run build
-#    ----- STOREFRONT -----   #
-
-###############################
-#    ----- API Gateway -----  #
-#    Build stage (node/npm)   #
-###############################
-FROM node:12-alpine as api-builder
-
-WORKDIR /app/api
-COPY src/api/. .
-
-# Prune (prom-client removed to fix KBs for orm stack)
-RUN rm -rf test scripts && \
-    npm uninstall prom-client && \
-    npm prune --production
-
-#    ----- API Gateway -----  #
-
-###############################
 #  ----- Image Assets -----   #
 ###############################
 FROM node:12-alpine as assets-builder
@@ -94,29 +38,6 @@ RUN rm -rf node_modules products hero *.md
 #  ----- Image Assets -----   #
 
 ###############################
-#    ------ Catalogue ------  #
-#    Build stage (Go Build)   #
-###############################
-
-# ##### Go Builder image
-FROM golang:1.14 AS catalogue-builder
-WORKDIR /go/src/mushop/catalogue
-
-# # Catalogue Go Source
-COPY src/catalogue/cmd/cataloguesvc/*.go cmd/cataloguesvc/
-COPY src/catalogue/*.go ./
-COPY src/catalogue/go.mod ./
-
-# # Build Catalogue service
-RUN GO111MODULE=on GOARCH=amd64 GOOS=linux \
-  go build -a \
-  -ldflags="-s -w" \
-  -installsuffix cgo \
-  -o /catalogue mushop/catalogue/cmd/cataloguesvc
-
-#    ------ Catalogue ------  #
-
-###############################
 #    ----- Base Image ------  #
 #      Everything needed      #
 ###############################
@@ -131,15 +52,8 @@ RUN yum clean metadata && \
   yum-config-manager --enable ol7_latest && \
   yum -y install oracle-instantclient${oracleClientVersion}-basiclite && \
   yum -y install zip && \
-  yum -y install oracle-nodejs-release-el7 && \
-  yum -y install nodejs && \
-  yum -y install httpd && \
   yum clean all && \
   rm -rf /var/cache/yum
-
-COPY deploy/basic/terraform/scripts/httpd.conf /etc/httpd/conf/
-COPY deploy/basic/terraform/scripts/docker_entrypoint.sh /
-RUN chmod +x /docker_entrypoint.sh
 
 #    ----- Base Image ------  #
 
@@ -153,15 +67,6 @@ FROM base
 ARG oracleClientVersion
 WORKDIR /
 
-# Copy Services apps
-COPY --from=storefront-builder /app/storefront/build /app/storefront
-COPY --from=api-builder /app/api /app/api
-COPY --from=catalogue-builder /catalogue /app/catalogue/catalogue
-COPY src/catalogue/VERSION /app/catalogue/
-
-# Create zip package of the Apps and local images
-RUN mkdir /package && GZIP=-9 tar cvzf /package/mushop-basic.tar.gz /app
-
 # Create ORM package
 COPY deploy/basic/VERSION /
 WORKDIR /basic
@@ -171,14 +76,9 @@ COPY deploy/basic/terraform/schema.yaml /basic/
 COPY deploy/basic/terraform/scripts /basic/scripts
 COPY src/catalogue/dbdata/atp_mushop_catalogue.sql /basic/scripts/
 COPY --from=assets-builder /app/assets/dist /basic/images
-RUN cp /package/mushop-basic.tar.gz /basic/scripts/
-RUN zip -r /package/mushop-basic-stack.zip .
+RUN mkdir /package && zip -r /package/mushop-basic-stack.zip .
 
 VOLUME ["/usr/lib/oracle/${oracleClientVersion}/client64/lib/network/admin/"]
 VOLUME ["/transfer/"]
-ENTRYPOINT ["/docker_entrypoint.sh"]
-EXPOSE 80
-EXPOSE 3000
-EXPOSE 3005
 
 #    ----- Base Image ------  #
